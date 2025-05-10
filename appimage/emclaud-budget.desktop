@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=EmClaud Budget
+Comment=Application de gestion budgétaire personnalisée
+Exec=emclaud_budget
+Icon=emclaud-budget
+Categories=Office;Finance;
+Terminal=false
+StartupNotify=true

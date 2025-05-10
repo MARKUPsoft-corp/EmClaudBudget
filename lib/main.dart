@@ -8,6 +8,7 @@ import 'package:budget_express/data/datasources/app_database.dart';
 import 'package:budget_express/data/repositories/transaction_repository_impl.dart';
 import 'package:budget_express/domain/repositories/transaction_repository.dart';
 import 'package:budget_express/presentation/providers/transaction_provider.dart';
+import 'package:budget_express/presentation/screens/splash_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 void main() async {
@@ -46,7 +47,7 @@ void main() async {
   );
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   final AdaptiveThemeMode? savedThemeMode;
   final TransactionRepository transactionRepository;
 
@@ -55,13 +56,26 @@ class MyApp extends StatelessWidget {
     this.savedThemeMode,
     required this.transactionRepository,
   });
+  
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  bool _showSplash = true;
+  
+  void _onInitializationComplete() {
+    setState(() {
+      _showSplash = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
         Provider<TransactionRepository>(
-          create: (_) => transactionRepository,
+          create: (_) => widget.transactionRepository,
         ),
         ChangeNotifierProvider(
           create: (context) => TransactionProvider(
@@ -70,11 +84,20 @@ class MyApp extends StatelessWidget {
         ),
       ],
       child: AdaptiveTheme(
-        light: AppTheme.lightTheme,
+        light: AppTheme.darkTheme, // Utiliser le thème sombre même en mode clair
         dark: AppTheme.darkTheme,
-        initial: savedThemeMode ?? AdaptiveThemeMode.light,
-        builder: (theme, darkTheme) => MaterialApp.router(
-          title: 'Budget Express',
+        initial: AdaptiveThemeMode.dark, // Forcer le mode sombre au démarrage
+        builder: (theme, darkTheme) => _showSplash 
+          ? MaterialApp(
+              title: 'EmClaud Budget',
+              debugShowCheckedModeBanner: false,
+              theme: darkTheme,
+              home: SplashScreen(
+                onInitializationComplete: _onInitializationComplete,
+              ),
+            )
+          : MaterialApp.router(
+          title: 'EmClaud Budget',
           debugShowCheckedModeBanner: false,
           theme: theme,
           darkTheme: darkTheme,

@@ -42,8 +42,8 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
     // Formateur pour les montants
     final currencyFormat = NumberFormat.currency(
       locale: 'fr_FR',
-      symbol: '€',
-      decimalDigits: 2,
+      symbol: 'FCFA',
+      decimalDigits: 0,
     );
 
     // Créer une Map des catégories pour un accès rapide
@@ -61,9 +61,6 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Revenus'),
-        elevation: 0,
-        backgroundColor: Colors.green.shade600,
-        foregroundColor: Colors.white,
         actions: [
           // Action pour filtrer
           IconButton(
@@ -97,7 +94,6 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
           ),
         ],
       ),
-      backgroundColor: Colors.grey.shade50,
       body: Consumer<TransactionProvider>(
         builder: (context, provider, child) {
           if (provider.isLoading) {
@@ -192,24 +188,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
               if (_hasActiveFilters() || _selectedSource.isNotEmpty || _isActiveFilter != null)
                 Container(
                   padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.green.shade100,
-                        Colors.green.shade50,
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 5,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
+                  color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -244,8 +223,37 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                                 if (_endDate != null)
                                   _buildFilterChip(
                                     'Jusqu\'au ${DateFormat(AppConstants.dateFormat).format(_endDate!)}',
+                                    () => setState(() => _endDate = null),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          // Réinitialiser tous les filtres
+                          TextButton(
+                            onPressed: _resetFilters,
+                            child: const Text('Réinitialiser'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      // Afficher le total filtré
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Total:'),
+                          Text(
+                            currencyFormat.format(totalFilteredIncomes),
+                            style: Theme.of(context).textTheme.titleMedium!.copyWith(
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                ],
+                ),
+              
               // Liste des revenus
               Expanded(
                 child: RefreshIndicator(

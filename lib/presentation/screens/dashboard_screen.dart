@@ -45,7 +45,7 @@ class MoneyParticleController {
   MoneyParticle _createParticle() {
     final moneyIcons = [
       Icons.attach_money,
-      Icons.euro,
+      Icons.attach_money,
       Icons.account_balance_wallet,
       Icons.credit_card,
     ];
@@ -268,7 +268,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     // Formateur pour les montants en FCFA
     final currencyFormat = NumberFormat.currency(
       locale: 'fr_FR',
-      symbol: 'FCFA ',
+      symbol: 'FCFA',
       decimalDigits: 0,
     );
 
@@ -1065,7 +1065,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       width:
                           (percentage.isNaN || percentage == double.infinity)
                               ? 0
-                              : percentage * 250,
+                              : percentage,
                       color: color,
                     ),
                   ],
@@ -1368,7 +1368,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       width:
                           (percentage.isNaN || percentage == double.infinity)
                               ? 0
-                              : percentage * 250,
+                              : percentage,
                       color: color,
                     ),
                   ],

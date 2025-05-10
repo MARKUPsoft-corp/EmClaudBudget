@@ -22,8 +22,8 @@ class TransactionCard extends StatelessWidget {
     final dateFormat = DateFormat(AppConstants.dateFormat);
     final numberFormat = NumberFormat.currency(
       locale: 'fr_FR',
-      symbol: '€',
-      decimalDigits: 2,
+      symbol: 'FCFA',
+      decimalDigits: 0,
     );
 
     // Déterminer si c'est une dépense ou un revenu

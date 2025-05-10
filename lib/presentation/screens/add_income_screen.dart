@@ -150,7 +150,7 @@ class _AddIncomeScreenState extends State<AddIncomeScreen> {
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: InputDecoration(
             hintText: '0.00',
-            prefixIcon: const Icon(Icons.euro),
+            prefixIcon: const Icon(Icons.attach_money),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
             ),
@@ -269,8 +269,15 @@ class _AddIncomeScreenState extends State<AddIncomeScreen> {
     );
   }
   
-  // Sélecteur de source de revenu
+  // Sélecteur de source de revenu (version dropdown)
   Widget _buildSourceSelector() {
+    // Identifier la source sélectionnée
+    final selectedSource = AppConstants.incomeCategories
+        .firstWhere((cat) => cat.id == _selectedSource,
+                 orElse: () => AppConstants.incomeCategories.first);
+    final color = selectedSource.isActive ? 
+                Colors.green : Theme.of(context).colorScheme.secondary;
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -280,63 +287,83 @@ class _AddIncomeScreenState extends State<AddIncomeScreen> {
         ),
         const SizedBox(height: 8),
         Container(
+          width: double.infinity,
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outline.withOpacity(0.5),
+              width: 1.0,
+            ),
             borderRadius: BorderRadius.circular(12),
           ),
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              childAspectRatio: 1.3,
-            ),
-            itemCount: AppConstants.incomeCategories.length,
-            itemBuilder: (context, index) {
-              final category = AppConstants.incomeCategories[index];
-              final isSelected = category.id == _selectedSource;
-              final color = category.isActive ? Colors.green : Theme.of(context).colorScheme.secondary;
-              
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedSource = category.id;
-                  });
-                },
-                child: Container(
-                  margin: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? (color.withOpacity(0.2))
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: isSelected ? color : Colors.transparent,
-                      width: 2,
-                    ),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        category.icon,
-                        color: color,
-                        size: 28,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        category.name,
-                        style: Theme.of(context).textTheme.bodySmall!.copyWith(
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          child: DropdownButtonHideUnderline(
+            child: ButtonTheme(
+              alignedDropdown: true,
+              child: DropdownButton<String>(
+                value: _selectedSource,
+                isExpanded: true,
+                borderRadius: BorderRadius.circular(12),
+                icon: const Icon(Icons.keyboard_arrow_down),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                menuMaxHeight: 300,
+                elevation: 3,
+                items: AppConstants.incomeCategories.map((category) {
+                  final itemColor = category.isActive ? 
+                      Colors.green : Theme.of(context).colorScheme.secondary;
+                  return DropdownMenuItem<String>(
+                    value: category.id,
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: itemColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(category.icon, color: itemColor, size: 20),
                         ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
+                        const SizedBox(width: 12),
+                        Text(
+                          category.name,
+                          style: const TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      _selectedSource = value;
+                    });
+                  }
+                },
+                // Afficher la source sélectionnée avec son icône
+                selectedItemBuilder: (BuildContext context) {
+                  return AppConstants.incomeCategories.map<Widget>((category) {
+                    return Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(selectedSource.icon, color: color, size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          selectedSource.name,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w500,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList();
+                },
+              ),
+            ),
           ),
         ),
       ],

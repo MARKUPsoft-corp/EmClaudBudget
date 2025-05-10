@@ -1,6 +1,6 @@
-# budget_express
+# EmClaud Budget
 
-A new Flutter project.
+Une application de gestion de budget personnalisée pour suivre vos revenus et dépenses, développée avec Flutter.
 
 ## Getting Started
 

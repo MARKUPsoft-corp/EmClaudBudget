@@ -41,8 +41,8 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
     // Formateur pour les montants
     final currencyFormat = NumberFormat.currency(
       locale: 'fr_FR',
-      symbol: '€',
-      decimalDigits: 2,
+      symbol: 'FCFA',
+      decimalDigits: 0,
     );
 
     // Créer une Map des catégories de dépenses pour un accès rapide

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+/// Theme principal de l'application EmClaud Budget
 class AppTheme {
   // Couleurs principales
   static const Color primaryOrange = Color(0xFFFF8C00);

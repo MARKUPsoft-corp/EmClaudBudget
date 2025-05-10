@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:budget_express/core/constants/app_constants.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -125,7 +126,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       width: 50,
                       height: 50,
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.9),
+                        color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.1),
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
@@ -135,25 +136,25 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ],
                       ),
-                      child: Center(
-                        child: Text(
-                          'BE',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 20,
-                            letterSpacing: -0.5,
-                          ),
+                      child: ClipOval(
+                        child: SvgPicture.asset(
+                          'assets/images/emclaud_logo.svg',
+                          width: 50,
+                          height: 50,
+                          fit: BoxFit.cover,
                         ),
                       ),
                     ),
                     const SizedBox(width: 16),
-                    Text(
-                      'Budget Express',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onPrimary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
+                    Flexible(
+                      child: Text(
+                        'EmClaud Budget',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
