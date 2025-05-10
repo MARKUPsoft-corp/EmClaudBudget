@@ -604,19 +604,26 @@ class _DashboardScreenState extends State<DashboardScreen>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        _buildBalanceInfoItem(
-                          context,
-                          'Revenus',
-                          currencyFormat.format(provider.totalIncome),
-                          Icons.arrow_upward,
-                          Colors.green,
+                        Flexible(
+                          flex: 1,
+                          child: _buildBalanceInfoItem(
+                            context,
+                            'Revenus',
+                            currencyFormat.format(provider.totalIncome),
+                            Icons.arrow_upward,
+                            Colors.green,
+                          ),
                         ),
-                        _buildBalanceInfoItem(
-                          context,
-                          'Dépenses',
-                          currencyFormat.format(provider.totalExpense),
-                          Icons.arrow_downward,
-                          Colors.red,
+                        const SizedBox(width: 8), // Espacement entre les deux éléments
+                        Flexible(
+                          flex: 1,
+                          child: _buildBalanceInfoItem(
+                            context,
+                            'Dépenses',
+                            currencyFormat.format(provider.totalExpense),
+                            Icons.arrow_downward,
+                            Colors.red,
+                          ),
                         ),
                       ],
                     ),
@@ -659,7 +666,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           children: [
             // Icône avec contraste amélioré pour visibilité
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(6), // Taille réduite sur mobile
               decoration: BoxDecoration(
                 color: iconColor.withOpacity(0.8),
                 borderRadius: BorderRadius.circular(8),
@@ -671,12 +678,13 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                 ],
               ),
-              child: Icon(icon, color: Colors.white, size: 18),
+              child: Icon(icon, color: Colors.white, size: 16), // Taille réduite
             ),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+            const SizedBox(width: 6), // Espacement réduit
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                 // Titre avec ombre pour meilleure visibilité
                 Text(
                   title,
@@ -710,11 +718,14 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                     ],
                   ),
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
       ),
     );
   }
@@ -1339,7 +1350,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ],
                   ),
                 ),
-                Padding(
+                Flexible(
+                  flex: 1,
+                  child: Padding(
                   padding: const EdgeInsets.only(left: 4.0),
                   child: Text(
                     currencyFormat.format(amount),
@@ -1347,7 +1360,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       fontWeight: FontWeight.bold,
                       color: color,
                     ),
-                  ),
+                  )),
                 ),
               ],
             ),
@@ -1486,27 +1499,35 @@ class _DashboardScreenState extends State<DashboardScreen>
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: color.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            typeLabel,
-                            style: TextStyle(
-                              color: color,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w500,
+                        Flexible(
+                          flex: 1,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: color.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              typeLabel,
+                              style: TextStyle(
+                                color: color,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          DateFormat('dd MMM yyyy').format(income.date),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
+                        const SizedBox(width: 4),
+                        Flexible(
+                          flex: 2,
+                          child: Text(
+                            DateFormat('dd MMM yyyy').format(income.date),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
@@ -1618,35 +1639,42 @@ class _DashboardScreenState extends State<DashboardScreen>
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
+                Flexible(
+                  flex: 3,
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6), // Padding réduit
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.history,
+                          color: Colors.blue,
+                          size: 16, // Taille réduite
+                        ),
                       ),
-                      child: const Icon(
-                        Icons.history,
-                        color: Colors.blue,
-                        size: 18,
+                      const SizedBox(width: 8), // Espacement réduit
+                      Flexible(
+                        child: Text(
+                          'Transactions récentes',
+                          style: Theme.of(context).textTheme.titleMedium!.copyWith( // Taille de police réduite
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: -0.3,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Transactions récentes',
-                      style: Theme.of(context).textTheme.titleLarge!.copyWith(
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
                 TextButton(
                   onPressed: () {
                     // Action pour voir toutes les transactions
                   },
                   child: const Text('Voir tout'),
+                  style: TextButton.styleFrom(padding: EdgeInsets.symmetric(horizontal: 8)), // Padding réduit
                 ),
               ],
             ),

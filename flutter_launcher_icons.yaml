@@ -1,0 +1,7 @@
+flutter_launcher_icons:
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  image_path: "assets/icons/emclaud_logo.png"
+  adaptive_icon_background: "#121212" # Couleur sombre pour correspondre au thème
+  adaptive_icon_foreground: "assets/icons/emclaud_logo.png"

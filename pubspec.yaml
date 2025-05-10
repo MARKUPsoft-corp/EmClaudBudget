@@ -50,6 +50,7 @@ dependencies:
   simple_animations: ^5.2.0
   particles_fly: ^0.0.9
   flutter_svg: ^2.0.9    # Pour utiliser des images SVG
+  flutter_launcher_icons: ^0.14.3
 
 dev_dependencies:
   flutter_test:

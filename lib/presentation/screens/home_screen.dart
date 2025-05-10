@@ -78,11 +78,15 @@ class _HomeScreenState extends State<HomeScreen> {
       body: isDesktop
           ? _buildDesktopLayout(context, routes)
           : _buildMobileLayout(context, routes),
-      // FAB pour ajouter une nouvelle transaction
+      // FAB pour ajouter une nouvelle transaction avec position optimisée
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddTransactionOptions(context),
         child: const Icon(Icons.add),
       ),
+      // Positionnement optimisé sur mobile pour éviter les conflits avec la navigation
+      floatingActionButtonLocation: isDesktop
+          ? FloatingActionButtonLocation.endFloat
+          : FloatingActionButtonLocation.centerFloat,
     );
   }
 

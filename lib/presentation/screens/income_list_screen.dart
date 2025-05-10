@@ -533,10 +533,13 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                               children: [
                                 const Icon(Icons.calendar_today, size: 16),
                                 const SizedBox(width: 8),
-                                Text(
-                                  _startDate == null
-                                      ? 'Date de début'
-                                      : DateFormat(AppConstants.dateFormat).format(_startDate!),
+                                Expanded(
+                                  child: Text(
+                                    _startDate == null
+                                        ? 'Date de début'
+                                        : DateFormat(AppConstants.dateFormat).format(_startDate!),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
                                 if (_startDate != null)
                                   IconButton(
@@ -585,10 +588,13 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                               children: [
                                 const Icon(Icons.calendar_today, size: 16),
                                 const SizedBox(width: 8),
-                                Text(
-                                  _endDate == null
-                                      ? 'Date de fin'
-                                      : DateFormat(AppConstants.dateFormat).format(_endDate!),
+                                Expanded(
+                                  child: Text(
+                                    _endDate == null
+                                        ? 'Date de fin'
+                                        : DateFormat(AppConstants.dateFormat).format(_endDate!),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
                                 if (_endDate != null)
                                   IconButton(
