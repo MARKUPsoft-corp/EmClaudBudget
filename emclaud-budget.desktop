@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=EmClaud Budget
+Comment=Application de gestion budgétaire personnalisée
+Exec=emclaud-budget
+Icon=/usr/local/share/icons/emclaud-budget.svg
+Terminal=false
+Categories=Office;Finance;
+Keywords=budget;finance;money;
+StartupNotify=true
