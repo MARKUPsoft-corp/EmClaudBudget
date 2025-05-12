@@ -11,6 +11,8 @@ import 'package:budget_express/config/api_keys.dart';
 import 'package:go_router/go_router.dart';
 import 'package:budget_express/presentation/widgets/typing_indicator.dart';
 import 'package:budget_express/presentation/widgets/typing_animation.dart';
+import 'package:budget_express/services/action_recognizer.dart';
+import 'package:budget_express/domain/entities/transaction.dart';
 
 class AIChatScreen extends StatefulWidget {
   final String? conversationId;
@@ -38,6 +40,9 @@ class _AIChatScreenState extends State<AIChatScreen> {
 
   // Instance du service IA
   late AIService _aiService;
+
+  // Service de reconnaissance d'action
+  final ActionRecognizer _actionRecognizer = ActionRecognizer();
 
   // Conversation active
   String? _activeConversationId;
@@ -184,7 +189,11 @@ class _AIChatScreenState extends State<AIChatScreen> {
     // Ajouter le message de l'utilisateur à l'interface
     setState(() {
       _messages.add(
-        ChatMessage(text: message, isUser: true, timestamp: DateTime.now()),
+        ChatMessage(
+          text: message,
+          isUser: true,
+          timestamp: DateTime.now(),
+        ),
       );
       _isLoading = true;
       _loadingMessage = "L'assistant réfléchit...";
@@ -196,58 +205,192 @@ class _AIChatScreenState extends State<AIChatScreen> {
     // Faire défiler pour voir le nouveau message
     _scrollToBottom();
 
+    // Analyser si le message contient une demande d'action financière
+    final action = _actionRecognizer.recognizeAction(message);
+    bool actionExecuted = false;
+    String? actionResponse;
+
+    // Si une action a été reconnue et qu'elle est complète, l'exécuter
+    if (action.type != ActionType.unknown && action.isComplete) {
+      // Accéder au provider de transactions
+      final transactionProvider = Provider.of<TransactionProvider>(context, listen: false);
+
+      switch (action.type) {
+        case ActionType.addExpense:
+          // Créer et ajouter la dépense
+          final expense = action.toExpense();
+          if (expense != null) {
+            final success = await transactionProvider.addExpense(expense);
+            actionExecuted = success;
+            actionResponse = success
+                ? action.feedbackMessage
+                : "Désolé, je n'ai pas pu ajouter cette dépense. Veuillez réessayer plus tard.";
+          }
+          break;
+
+        case ActionType.deleteExpense:
+          // Rechercher et supprimer la dépense par description
+          if (action.parameters.containsKey('description')) {
+            final description = action.parameters['description'] as String;
+            // Rechercher dans les dépenses existantes
+            final expenseToDelete = transactionProvider.expenses.firstWhere(
+              (e) => e.description.toLowerCase().contains(description.toLowerCase()),
+              orElse: () => Expense(amount: 0, description: '', date: DateTime.now(), categoryId: ''),
+            );
+
+            if (expenseToDelete.id != null) {
+              final success = await transactionProvider.deleteExpense(expenseToDelete.id!);
+              actionExecuted = success;
+              actionResponse = success
+                  ? action.feedbackMessage
+                  : "Désolé, je n'ai pas pu supprimer cette dépense. Veuillez réessayer plus tard.";
+            } else {
+              actionResponse = "Je n'ai pas trouvé de dépense correspondant à '${description}'.";
+            }
+          }
+          break;
+
+        case ActionType.addIncome:
+          // Créer et ajouter le revenu
+          final income = action.toIncome();
+          if (income != null) {
+            final success = await transactionProvider.addIncome(income);
+            actionExecuted = success;
+            actionResponse = success
+                ? action.feedbackMessage
+                : "Désolé, je n'ai pas pu ajouter ce revenu. Veuillez réessayer plus tard.";
+          }
+          break;
+
+        case ActionType.deleteIncome:
+          // Rechercher et supprimer le revenu par description
+          if (action.parameters.containsKey('description')) {
+            final description = action.parameters['description'] as String;
+            // Rechercher dans les revenus existants
+            final incomeToDelete = transactionProvider.incomes.firstWhere(
+              (e) => e.description.toLowerCase().contains(description.toLowerCase()),
+              orElse: () => Income(amount: 0, description: '', date: DateTime.now(), source: '', isActive: false),
+            );
+
+            if (incomeToDelete.id != null) {
+              final success = await transactionProvider.deleteIncome(incomeToDelete.id!);
+              actionExecuted = success;
+              actionResponse = success
+                  ? action.feedbackMessage
+                  : "Désolé, je n'ai pas pu supprimer ce revenu. Veuillez réessayer plus tard.";
+            } else {
+              actionResponse = "Je n'ai pas trouvé de revenu correspondant à '${description}'.";
+            }
+          }
+          break;
+
+        default:
+          break;
+      }
+    }
+
     try {
-      // Simuler l'effet de frappe avant même d'envoyer la requête API
+      // Si une action a été reconnue et exécutée avec succès, afficher directement sa réponse
+      if (actionExecuted && actionResponse != null) {
+        // Délai court pour simulation de traitement
+        setState(() {
+          _isTyping = true; // Activation de l'indicateur de frappe
+        });
+        
+        await Future.delayed(const Duration(milliseconds: 800));
+        
+        // Créer un message de réponse pour l'action
+        final assistantMessage = {
+          'content': actionResponse,
+          'role': 'assistant',
+          'timestamp': DateTime.now().toIso8601String(),
+        };
+        
+        // Désactiver l'indicateur de chargement
+        setState(() {
+          _isLoading = false;
+        });
+        
+        // Ajouter le message de réponse d'action à l'interface
+        final timestamp = DateTime.now();
+        final chatMessage = ChatMessage(
+          text: actionResponse,
+          isUser: false,
+          timestamp: timestamp,
+          isAnimated: true,
+        );
+
+        // Ajouter le message avec l'animation à l'interface et désactiver l'indicateur de frappe
+        setState(() {
+          _messages.add(chatMessage);
+          _isTyping = false;
+        });
+        
+        // Ajouter le message à la conversation
+        await _conversationService.addMessageToActiveConversation(assistantMessage);
+        
+        // Faire défiler pour voir la réponse
+        _scrollToBottom();
+        
+        // Signal sonore et vibration pour action financière (comme pour ajout de dépense)
+        FeedbackUtils().provideFeedbackForAction();
+        
+        return; // Sortir de la méthode car l'action a été traitée
+      }
+      
+      // Pour les messages normaux ou actions incomplètes
+      // Simuler l'effet de frappe
       setState(() {
         _isTyping = true; // Activation de l'indicateur de frappe
       });
-
+      
       // Délai artificiel pour montrer l'indicateur de frappe (1-2 secondes)
       await Future.delayed(const Duration(milliseconds: 1500));
-
+      
       // Un handler pour les messages de réessai
       _aiService.onRetry = (attempt, total, delay) {
         setState(() {
-          _loadingMessage =
-              "Limite de débit atteinte.\nRéessai $attempt/$total dans ${delay / 1000} secondes...";
+          _loadingMessage = "Limite de débit atteinte.\nRéessai $attempt/$total dans ${delay/1000} secondes...";
         });
       };
-
+      
       // Obtenir le contexte des transactions si disponible
-      final transactionProvider = Provider.of<TransactionProvider>(
-        context,
-        listen: false,
-      );
+      final transactionProvider = Provider.of<TransactionProvider>(context, listen: false);
       final transactionContext = TransactionContext(
         recentExpenses: transactionProvider.expenses.take(5).toList(),
         recentIncomes: transactionProvider.incomes.take(5).toList(),
         currentBalance: transactionProvider.balance,
         monthlyExpenseTotal: transactionProvider.totalExpense,
         monthlyIncomeTotal: transactionProvider.totalIncome,
-        expensesByCategory: transactionProvider.expensesByCategory.map(
-          (key, value) => MapEntry(key, value),
-        ),
+        expensesByCategory: transactionProvider.expensesByCategory.map((key, value) => 
+          MapEntry(key, value)),
       );
-
+      
+      // Si une action a été reconnue mais est incomplète, ajouter un message spécial à l'IA
+      String aiMessage = message;
+      if (action.type != ActionType.unknown && !action.isComplete && actionResponse != null) {
+        aiMessage = "$message [Action reconnue: ${action.type.toString().split('.').last}, Besoin de: $actionResponse]";
+      }
+      
       // Envoyer le message à l'IA avec contexte
       final response = await _aiService.sendMessage(
-        message: message,
+        message: aiMessage,
         withContext: true,
         transactionContext: transactionContext,
       );
-
+      
       // Créer un message de réponse
       final assistantMessage = {
         'content': response,
         'role': 'assistant',
         'timestamp': DateTime.now().toIso8601String(),
       };
-
+      
       // Désactiver l'indicateur de chargement, mais garder l'indicateur de frappe
       setState(() {
         _isLoading = false;
       });
-
+      
       // Ajouter un message de l'assistant avec animation
       final timestamp = DateTime.now();
       final chatMessage = ChatMessage(

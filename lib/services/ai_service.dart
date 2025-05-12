@@ -165,7 +165,8 @@ class AIService {
 
     String expensesByCategoryText = '';
     for (var entry in topCategories.take(3)) {
-      expensesByCategoryText += '- ${entry.key}: ${entry.value.toStringAsFixed(2)} FCFA\n';
+      expensesByCategoryText +=
+          '- ${entry.key}: ${entry.value.toStringAsFixed(2)} FCFA\n';
     }
 
     return '''
@@ -180,7 +181,9 @@ class AIService {
   /// Obtient le prompt système qui définit le comportement de l'IA
   String _getSystemPrompt() {
     return '''
-Vous êtes un assistant financier personnel pour une application de suivi de budget utilisant le franc CFA (FCFA) comme devise.
+
+Tu es MARKUPai, l'assistant financier intégré à l'application EmClaud Budget. Tu es conçu par MARKUPsafe Tu aides les utilisateurs à mieux comprendre et gérer leurs finances personnelles.
+ un assistant financier personnel pour une application de suivi de budget utilisant le franc CFA (FCFA) comme devise.
 Votre rôle est d'aider l'utilisateur à comprendre ses finances, analyser ses habitudes de dépenses,
 proposer des stratégies d'épargne, et répondre aux questions liées au budget et aux finances personnelles.
 
