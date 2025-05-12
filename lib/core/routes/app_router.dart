@@ -8,6 +8,7 @@ import 'package:budget_express/presentation/screens/add_income_screen.dart';
 import 'package:budget_express/presentation/screens/add_expense_screen.dart';
 import 'package:budget_express/presentation/screens/settings_screen.dart';
 import 'package:budget_express/presentation/screens/home_screen.dart';
+import 'package:budget_express/presentation/screens/ai_chat_screen.dart';
 
 class AppRouter {
   static final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -71,6 +72,20 @@ class AppRouter {
             pageBuilder: (context, state) => CustomTransitionPage(
               key: state.pageKey,
               child: const SettingsScreen(),
+              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: child,
+                );
+              },
+            ),
+          ),
+          // Route du chat IA
+          GoRoute(
+            path: AppConstants.aiChatRoute,
+            pageBuilder: (context, state) => CustomTransitionPage(
+              key: state.pageKey,
+              child: const AIChatScreen(),
               transitionsBuilder: (context, animation, secondaryAnimation, child) {
                 return FadeTransition(
                   opacity: animation,

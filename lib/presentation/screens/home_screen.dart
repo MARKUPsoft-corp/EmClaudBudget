@@ -57,6 +57,12 @@ class _HomeScreenState extends State<HomeScreen> {
         label: 'Dépenses',
       ),
       NavigationDestination(
+        route: AppConstants.aiChatRoute,
+        icon: Icons.chat_bubble_outline,
+        selectedIcon: Icons.chat_bubble,
+        label: 'Assistant IA',
+      ),
+      NavigationDestination(
         route: AppConstants.settingsRoute,
         icon: Icons.settings,
         selectedIcon: Icons.settings,

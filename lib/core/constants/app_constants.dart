@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:budget_express/core/theme/app_theme.dart';
 
 class AppConstants {
   // Noms des routes
@@ -10,6 +9,7 @@ class AppConstants {
   static const String addIncomeRoute = '/add-income';
   static const String addExpenseRoute = '/add-expense';
   static const String settingsRoute = '/settings';
+  static const String aiChatRoute = '/ai-chat';
 
   // Catégories de dépenses
   static final List<ExpenseCategory> expenseCategories = [
