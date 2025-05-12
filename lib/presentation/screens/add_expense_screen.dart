@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:budget_express/core/constants/app_constants.dart';
 import 'package:budget_express/domain/entities/transaction.dart';
 import 'package:budget_express/presentation/providers/transaction_provider.dart';
+import 'package:budget_express/utils/feedback_utils.dart'; // Import des utilitaires de feedback
 
 class AddExpenseScreen extends StatefulWidget {
   final Map<String, dynamic>? expense;
@@ -449,6 +450,9 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       }
       
       if (success) {
+        // Jouer un son pour la validation réussie d'une dépense (avec vibration)
+        await FeedbackUtils().provideFeedbackForAction();
+        
         if (mounted) {
           Navigator.pop(context);
         }

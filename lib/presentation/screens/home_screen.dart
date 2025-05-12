@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:budget_express/core/constants/app_constants.dart';
+import 'package:budget_express/utils/feedback_utils.dart';
 
 class HomeScreen extends StatefulWidget {
   final Widget child;
@@ -78,9 +79,13 @@ class _HomeScreenState extends State<HomeScreen> {
       body: isDesktop
           ? _buildDesktopLayout(context, routes)
           : _buildMobileLayout(context, routes),
-      // FAB pour ajouter une nouvelle transaction avec position optimisée
+      // FAB pour ajouter une nouvelle transaction
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddTransactionOptions(context),
+        onPressed: () async {
+          // Uniquement retour haptique pour la navigation
+          await FeedbackUtils().provideFeedbackForMenu();
+          _showAddTransactionOptions(context);
+        },
         child: const Icon(Icons.add),
       ),
       // Positionnement optimisé sur mobile pour éviter les conflits avec la navigation
@@ -274,7 +279,10 @@ class _HomeScreenState extends State<HomeScreen> {
         // Barre de navigation inférieure
         BottomNavigationBar(
           currentIndex: _selectedIndex,
-          onTap: (index) {
+          onTap: (index) async {
+            // Activer les retours haptiques et sonores sur mobile
+            await FeedbackUtils().provideFeedbackForMenu();
+            
             setState(() {
               _selectedIndex = index;
               context.go(routes[index].route);
@@ -322,7 +330,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   title: const Text('Ajouter un revenu'),
-                  onTap: () {
+                  onTap: () async {
+                    // Activer les retours haptiques et sonores
+                    await FeedbackUtils().provideFeedbackForMenu();
                     Navigator.pop(context);
                     context.push(AppConstants.addIncomeRoute);
                   },
@@ -341,7 +351,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   title: const Text('Ajouter une dépense'),
-                  onTap: () {
+                  onTap: () async {
+                    // Activer les retours haptiques et sonores
+                    await FeedbackUtils().provideFeedbackForMenu();
                     Navigator.pop(context);
                     context.push(AppConstants.addExpenseRoute);
                   },

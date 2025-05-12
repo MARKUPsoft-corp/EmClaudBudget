@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 import 'package:budget_express/core/constants/app_constants.dart';
 import 'package:budget_express/domain/entities/transaction.dart';
 import 'package:budget_express/presentation/providers/transaction_provider.dart';
 import 'package:budget_express/presentation/widgets/transaction_card.dart';
+import 'package:budget_express/utils/feedback_utils.dart';
 
 class IncomeListScreen extends StatefulWidget {
   const IncomeListScreen({super.key});
@@ -21,6 +24,14 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
   DateTime? _startDate;
   DateTime? _endDate;
   
+  // État pour la recherche textuelle
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  bool _isSearching = false;
+  
+  // État pour le tri
+  String _sortBy = 'date_desc';
+  
   // Clé pour le refresh indicator
   final _refreshKey = GlobalKey<RefreshIndicatorState>();
 
@@ -28,12 +39,32 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
   void initState() {
     super.initState();
     
+    // Initialiser les données de localisation pour le français
+    initializeDateFormatting('fr_FR', null);
+    
     // Initialiser les données au chargement
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = Provider.of<TransactionProvider>(context, listen: false);
       if (provider.incomes.isEmpty) {
         provider.initialize();
       }
+    });
+    
+    // Configurer l'écoute des changements dans le champ de recherche
+    _searchController.addListener(_onSearchChanged);
+  }
+  
+  @override
+  void dispose() {
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    super.dispose();
+  }
+  
+  // Méthode appelée lorsque le texte de recherche change
+  void _onSearchChanged() {
+    setState(() {
+      _searchQuery = _searchController.text.trim().toLowerCase();
     });
   }
 
@@ -60,8 +91,39 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
     
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Revenus'),
+        title: _isSearching 
+            ? TextField(
+                controller: _searchController,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'Rechercher un revenu...',
+                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                  border: InputBorder.none,
+                ),
+                onSubmitted: (_) {
+                  FeedbackUtils().provideFeedbackForAction();
+                },
+              )
+            : const Text('Revenus'),
         actions: [
+          // Action pour la recherche
+          IconButton(
+            icon: Icon(_isSearching ? Icons.close : Icons.search),
+            onPressed: () {
+              setState(() {
+                if (_isSearching) {
+                  _isSearching = false;
+                  _searchController.clear();
+                  _searchQuery = '';
+                } else {
+                  _isSearching = true;
+                }
+                FeedbackUtils().provideFeedbackForMenu(); // Vibration uniquement pour la navigation
+              });
+            },
+            tooltip: _isSearching ? 'Annuler' : 'Rechercher',
+          ),
           // Action pour filtrer
           IconButton(
             icon: const Icon(Icons.filter_list),
@@ -156,12 +218,16 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'Aucun revenu',
+                          _searchQuery.isNotEmpty 
+                              ? 'Aucun résultat pour "$_searchQuery"'
+                              : 'Aucun revenu',
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                         const SizedBox(height: 8),
-                        const Text(
-                          'Ajoutez des revenus en appuyant sur le bouton +',
+                        Text(
+                          _searchQuery.isNotEmpty
+                              ? 'Essayez avec un autre terme de recherche'
+                              : 'Ajoutez des revenus en appuyant sur le bouton +',
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 24),
@@ -254,25 +320,12 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                   ),
                 ),
               
-              // Liste des revenus
+              // Liste des revenus groupés par semaine
               Expanded(
                 child: RefreshIndicator(
                   key: _refreshKey,
                   onRefresh: () => provider.initialize(),
-                  child: ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 80),
-                    itemCount: filteredIncomes.length,
-                    itemBuilder: (context, index) {
-                      final income = filteredIncomes[index];
-                      
-                      return TransactionCard(
-                        transaction: income,
-                        onEdit: () => _editIncome(context, income),
-                        onDelete: () => _deleteIncome(context, income),
-                        categories: categoriesMap,
-                      );
-                    },
-                  ),
+                  child: _buildWeeklyIncomesList(filteredIncomes, categoriesMap),
                 ),
               ),
             ],
@@ -311,7 +364,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
   
   // Filtrer les revenus selon les critères sélectionnés
   List<Income> _getFilteredIncomes(List<Income> incomes) {
-    return incomes.where((income) {
+    var filtered = incomes.where((income) {
       // Filtrer par source
       if (_selectedSource.isNotEmpty && 
           income.source != _selectedSource) {
@@ -340,8 +393,34 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
         }
       }
       
+      // Filtrer par texte de recherche
+      if (_searchQuery.isNotEmpty) {
+        final description = income.description.toLowerCase();
+        if (!description.contains(_searchQuery)) {
+          return false;
+        }
+      }
+      
       return true;
     }).toList();
+    
+    // Trier les revenus selon le mode de tri sélectionné
+    switch (_sortBy) {
+      case 'date_desc':
+        filtered.sort((a, b) => b.date.compareTo(a.date));
+        break;
+      case 'date_asc':
+        filtered.sort((a, b) => a.date.compareTo(b.date));
+        break;
+      case 'amount_desc':
+        filtered.sort((a, b) => b.amount.compareTo(a.amount));
+        break;
+      case 'amount_asc':
+        filtered.sort((a, b) => a.amount.compareTo(b.amount));
+        break;
+    }
+    
+    return filtered;
   }
   
   // Vérifier si des filtres sont actifs
@@ -359,31 +438,244 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
     });
   }
   
-  // Trier les revenus
-  void _sortIncomes(String sortBy) {
-    final provider = Provider.of<TransactionProvider>(context, listen: false);
+  // Construction de la liste des revenus groupés par semaine
+  Widget _buildWeeklyIncomesList(List<Income> incomes, Map<String, ExpenseCategory> categoriesMap) {
+    if (incomes.isEmpty) {
+      return ListView();
+    }
+
+    // Regrouper les revenus par semaine
+    final Map<String, List<Income>> weeklyIncomes = {};
+    final DateFormat weekFormat = DateFormat("'Semaine du' d MMMM yyyy", 'fr_FR');
+    final DateFormat monthFormat = DateFormat('MMMM yyyy', 'fr_FR');
     
-    // Créer une copie de la liste pour éviter de modifier la liste originale directement
-    List<Income> sortedIncomes = List.from(provider.incomes);
+    for (var income in incomes) {
+      // Trouver le premier jour de la semaine (lundi)
+      final date = income.date;
+      final weekStart = date.subtract(Duration(days: date.weekday - 1));
+      final weekKey = weekFormat.format(weekStart);
+      
+      if (!weeklyIncomes.containsKey(weekKey)) {
+        weeklyIncomes[weekKey] = [];
+      }
+      weeklyIncomes[weekKey]!.add(income);
+    }
+
+    // Trier les semaines par ordre chronologique décroissant (plus récent d'abord)
+    final sortedWeeks = weeklyIncomes.keys.toList()
+      ..sort((a, b) {
+        // Extraire les dates des clés formatées
+        final dateA = _extractDateFromWeekKey(a);
+        final dateB = _extractDateFromWeekKey(b);
+        return dateB.compareTo(dateA); // Ordre décroissant
+      });
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 80),
+      // +1 pour chaque en-tête de semaine
+      itemCount: weeklyIncomes.values.fold(0, (sum, weekIncomes) => sum + weekIncomes.length) + sortedWeeks.length,
+      itemBuilder: (context, index) {
+        // Calculer à quelle semaine et à quel revenu cet index correspond
+        int itemCount = 0;
+        for (var weekKey in sortedWeeks) {
+          final weekIncomes = weeklyIncomes[weekKey]!;
+          
+          // Si c'est l'index d'un en-tête de semaine
+          if (index == itemCount) {
+            // Calculer le total des revenus pour cette semaine
+            final weekTotal = weekIncomes.fold<double>(0, (sum, inc) => sum + inc.amount);
+            final weekDate = _extractDateFromWeekKey(weekKey);
+            final monthName = monthFormat.format(weekDate).toUpperCase();
+            
+            return _buildWeekHeader(weekKey, monthName, weekTotal);
+          }
+          
+          itemCount += 1; // Pour l'en-tête
+          
+          // Si l'index correspond à un revenu dans cette semaine
+          if (index < itemCount + weekIncomes.length) {
+            final income = weekIncomes[index - itemCount];
+            // Ajouter un padding en haut de la première transaction de chaque semaine
+            if (index == itemCount) {
+              return Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: TransactionCard(
+                  transaction: income,
+                  onEdit: () => _editIncome(context, income),
+                  onDelete: () => _deleteIncome(context, income),
+                  categories: categoriesMap,
+                ),
+              );
+            }
+            return TransactionCard(
+              transaction: income,
+              onEdit: () => _editIncome(context, income),
+              onDelete: () => _deleteIncome(context, income),
+              categories: categoriesMap,
+            );
+          }
+          
+          itemCount += weekIncomes.length;
+        }
+        
+        // Ne devrait jamais arriver
+        return const SizedBox();
+      },
+    );
+  }
+  
+  // Extraire la date à partir de la clé de semaine formatée
+  DateTime _extractDateFromWeekKey(String weekKey) {
+    // Format: "Semaine du dd MMMM yyyy"
+    final regex = RegExp(r"Semaine du (\d+) ([a-zéûôâùA-Z]+) (\d{4})");
+    final match = regex.firstMatch(weekKey);
     
-    switch (sortBy) {
-      case 'date_desc':
-        sortedIncomes.sort((a, b) => b.date.compareTo(a.date));
-        break;
-      case 'date_asc':
-        sortedIncomes.sort((a, b) => a.date.compareTo(b.date));
-        break;
-      case 'amount_desc':
-        sortedIncomes.sort((a, b) => b.amount.compareTo(a.amount));
-        break;
-      case 'amount_asc':
-        sortedIncomes.sort((a, b) => a.amount.compareTo(b.amount));
-        break;
+    if (match != null) {
+      final day = int.parse(match.group(1)!);
+      final month = _getMonthNumber(match.group(2)!);
+      final year = int.parse(match.group(3)!);
+      return DateTime(year, month, day);
     }
     
-    // Mettre à jour la liste dans le provider
-    // Note: Dans une implémentation réelle, il faudrait ajouter une méthode dans le provider pour faire cela
-    setState(() {});
+    // Fallback en cas d'erreur de parsing
+    return DateTime.now();
+  }
+  
+  // Convertir le nom du mois en français en numéro
+  int _getMonthNumber(String monthName) {
+    final months = {
+      'janvier': 1, 'février': 2, 'mars': 3, 'avril': 4, 'mai': 5, 'juin': 6,
+      'juillet': 7, 'août': 8, 'septembre': 9, 'octobre': 10, 'novembre': 11, 'décembre': 12
+    };
+    return months[monthName.toLowerCase()] ?? 1;
+  }
+  
+  // Construction de l'en-tête de semaine adapté au mode sombre
+  Widget _buildWeekHeader(String weekLabel, String monthName, double totalAmount) {
+    final currencyFormat = NumberFormat.currency(
+      locale: 'fr_FR',
+      symbol: 'FCFA',
+      decimalDigits: 0,
+    );
+    
+    final theme = Theme.of(context);
+    final primaryColor = theme.colorScheme.primary; // Orange
+    final cardColor = theme.cardTheme.color ?? const Color(0xFF1E1E1E);
+    final textColor = theme.colorScheme.onSurface; // Blanc en mode sombre
+    
+    return Container(
+      margin: const EdgeInsets.only(top: 16, bottom: 16, left: 8, right: 8),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+        border: Border.all(color: Colors.grey.withOpacity(0.1), width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // En-tête du mois en haut avec style distinctif
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+            decoration: BoxDecoration(
+              color: primaryColor.withOpacity(0.2),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+            ),
+            child: Text(
+              monthName,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: primaryColor,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ),
+          // Entête de la semaine avec total
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: Colors.grey.withOpacity(0.15), width: 1)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Label de la semaine avec icône
+                Row(
+                  children: [
+                    Icon(
+                      Icons.calendar_view_week,
+                      size: 18,
+                      color: primaryColor.withOpacity(0.7),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      weekLabel,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: textColor,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // Montant total avec style élaboré
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.withOpacity(0.3), width: 1),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Total perçu:',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: textColor.withOpacity(0.8),
+                        ),
+                      ),
+                      Text(
+                        currencyFormat.format(totalAmount),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  // Trier les revenus
+  void _sortIncomes(String sortBy) {
+    // Mettre à jour le mode de tri et rafraîchir
+    setState(() {
+      _sortBy = sortBy;
+      FeedbackUtils().provideFeedbackForMenu(); // Vibration uniquement pour la navigation
+    });
   }
   
   // Afficher les options de filtrage
