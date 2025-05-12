@@ -3,13 +3,19 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:budget_express/services/ai_service.dart';
-import 'package:budget_express/services/conversation_history_service.dart';
+import 'package:budget_express/services/conversation_service.dart';
+import 'package:budget_express/core/constants/app_constants.dart';
 import 'package:budget_express/presentation/providers/transaction_provider.dart';
 import 'package:budget_express/utils/feedback_utils.dart';
 import 'package:budget_express/config/api_keys.dart';
+import 'package:go_router/go_router.dart';
+import 'package:budget_express/presentation/widgets/typing_indicator.dart';
+import 'package:budget_express/presentation/widgets/typing_animation.dart';
 
 class AIChatScreen extends StatefulWidget {
-  const AIChatScreen({super.key});
+  final String? conversationId;
+
+  const AIChatScreen({super.key, this.conversationId});
 
   @override
   State<AIChatScreen> createState() => _AIChatScreenState();
@@ -20,36 +26,135 @@ class _AIChatScreenState extends State<AIChatScreen> {
   final _scrollController = ScrollController();
   final List<ChatMessage> _messages = [];
   bool _isLoading = false;
-  
-  // Service pour gérer l'historique des conversations
-  final ConversationHistoryService _historyService = ConversationHistoryService();
-  
+  bool _isTyping = false; // Indique si l'IA est en train de "taper"
+  String _loadingMessage = "";
+  bool _showScrollButton = false;
+
+  // Service pour gérer les conversations multiples
+  final ConversationService _conversationService = ConversationService();
+
   // Clé API Groq provenant du fichier de configuration
   static final _groqApiKey = ApiKeys.groqApiKey;
-  
+
   // Instance du service IA
   late AIService _aiService;
-  
+
+  // Conversation active
+  String? _activeConversationId;
+
   @override
   void initState() {
     super.initState();
     _aiService = AIService(_groqApiKey);
     _messageController = TextEditingController();
-    _loadConversationHistory();
+
+    // Définir l'ID de conversation active s'il est fourni via les params de navigation
+    _activeConversationId = widget.conversationId;
+
+    // Initialiser et charger la conversation
+    _initConversation();
+
+    // Écouter le défilement pour afficher/masquer le bouton de scroll
+    _scrollController.addListener(_onScrollChanged);
   }
-  
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // S'assurer que le défilement se fait automatiquement après le rendu
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollToBottom();
+
+  // Initialiser la conversation active
+  Future<void> _initConversation() async {
+    setState(() {
+      _isLoading = true;
+      _loadingMessage = "Chargement de la conversation...";
     });
+
+    try {
+      // Initialiser le service de conversations
+      await _conversationService.initialize();
+
+      // Si un ID de conversation a été fourni, le définir comme conversation active
+      if (_activeConversationId != null) {
+        await _conversationService.setActiveConversation(
+          _activeConversationId!,
+        );
+      }
+
+      // Obtenir la conversation active ou en créer une nouvelle
+      final activeConversation =
+          _conversationService.activeConversation ??
+          await _conversationService.createConversation(
+            title: "Nouvelle conversation",
+          );
+      _activeConversationId = activeConversation.id;
+
+      // Charger les messages de la conversation active
+      final conversationMessages = activeConversation.messages;
+      setState(() {
+        _messages.clear();
+        for (final msg in conversationMessages) {
+          _messages.add(
+            ChatMessage(
+              text: msg['content'] as String,
+              isUser: msg['role'] == 'user',
+              timestamp: DateTime.parse(msg['timestamp'] as String),
+            ),
+          );
+        }
+
+        // Ajouter un message de bienvenue si la conversation est vide
+        if (_messages.isEmpty) {
+          _messages.add(
+            ChatMessage(
+              text:
+                  "Bonjour, je suis votre assistant financier personnel. Je peux vous aider à analyser vos finances, suggérer des stratégies d'épargne, et répondre à vos questions sur votre budget. Comment puis-je vous aider aujourd'hui ?",
+              isUser: false,
+              timestamp: DateTime.now(),
+            ),
+          );
+        }
+
+        _isLoading = false;
+      });
+
+      // Faire défiler vers le bas après le chargement
+      Future.delayed(const Duration(milliseconds: 100), _scrollToBottom);
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _messages.add(
+          ChatMessage(
+            text:
+                "Une erreur est survenue lors du chargement de la conversation. Veuillez réessayer.",
+            isUser: false,
+            timestamp: DateTime.now(),
+          ),
+        );
+      });
+    }
   }
-  
-  // Faire défiler vers le bas de la conversation
+
+  // Vérifie la position de défilement pour afficher ou masquer le bouton
+  void _onScrollChanged() {
+    // Montrer le bouton uniquement quand il reste du contenu à voir en bas
+    if (_scrollController.hasClients && _messages.length > 1) {
+      // Calculer combien il reste de contenu à faire défiler
+      final remainingScroll =
+          _scrollController.position.maxScrollExtent - _scrollController.offset;
+      // Afficher le bouton uniquement si on a une distance significative à défiler (plus de 200 pixels)
+      final shouldShow = remainingScroll > 200;
+
+      // Mettre à jour l'état si nécessaire
+      if (shouldShow != _showScrollButton) {
+        setState(() => _showScrollButton = shouldShow);
+      }
+    } else {
+      // S'assurer que le bouton est masqué s'il n'y a pas assez de messages
+      if (_showScrollButton) {
+        setState(() => _showScrollButton = false);
+      }
+    }
+  }
+
+  // Faire défiler vers le bas de la liste de messages
   void _scrollToBottom() {
-    if (_scrollController.hasClients && _messages.isNotEmpty) {
+    if (_scrollController.hasClients) {
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
         duration: const Duration(milliseconds: 300),
@@ -57,291 +162,425 @@ class _AIChatScreenState extends State<AIChatScreen> {
       );
     }
   }
-  
-  // Charge l'historique des conversations depuis le stockage local
-  Future<void> _loadConversationHistory() async {
-    try {
-      final conversations = await _historyService.getConversations();
-      
-      // Si aucune conversation n'existe, initialiser avec un message de bienvenue
-      if (conversations.isEmpty) {
-        _aiService.clearChatHistory(); // Ajoute le message de bienvenue dans le service
-        setState(() {
-          _messages.add(ChatMessage(
-            text: "Bonjour, je suis votre assistant financier personnel. Je peux vous aider à analyser vos finances, suggérer des stratégies d'épargne, et répondre à vos questions sur votre budget. Comment puis-je vous aider aujourd'hui ?",
-            isUser: false,
-            timestamp: DateTime.now(),
-          ));
-        });
-        return;
-      }
-      
-      // Sinon, charger l'historique existant
-      final historyForAI = <Map<String, dynamic>>[];
-      setState(() {
-        _messages.clear();
-        for (var message in conversations) {
-          _messages.add(ChatMessage(
-            text: message['content'] as String,
-            isUser: message['role'] == 'user',
-            timestamp: DateTime.parse(message['timestamp'] as String),
-          ));
-          
-          // Préparer l'historique pour le service AI
-          historyForAI.add({
-            'role': message['role'] as String,
-            'content': message['content'] as String,
-          });
-        }
-      });
-      
-      // Synchroniser l'historique avec le service IA pour maintenir le contexte
-      _aiService.chatHistory = historyForAI;
-    } catch (e) {
-      print('Erreur lors du chargement de l\'historique: $e');
-    }
-  }
-  
-  @override
-  void dispose() {
-    _messageController.dispose();
-    _scrollController.dispose();
-    super.dispose();
-  }
-  
-  // Obtenir le contexte des transactions pour l'IA
-  Future<TransactionContext> _getTransactionContextForAI(TransactionProvider provider) async {
-    final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
-    
-    final recentExpenses = provider.expenses
-        .where((e) => e.date.isAfter(thirtyDaysAgo))
-        .toList();
-    final recentIncomes = provider.incomes
-        .where((i) => i.date.isAfter(thirtyDaysAgo))
-        .toList();
-    
-    final monthlyExpenseTotal = recentExpenses.fold<double>(
-      0, (sum, expense) => sum + expense.amount);
-    
-    final monthlyIncomeTotal = recentIncomes.fold<double>(
-      0, (sum, income) => sum + income.amount);
-    
-    final expensesByCategory = <String, double>{};
-    for (var expense in recentExpenses) {
-      expensesByCategory.update(
-        expense.categoryId,
-        (value) => value + expense.amount,
-        ifAbsent: () => expense.amount,
-      );
-    }
-    
-    return TransactionContext(
-      recentExpenses: recentExpenses,
-      recentIncomes: recentIncomes,
-      currentBalance: provider.balance,
-      monthlyExpenseTotal: monthlyExpenseTotal,
-      monthlyIncomeTotal: monthlyIncomeTotal,
-      expensesByCategory: expensesByCategory,
-    );
-  }
-  
-  // Envoyer un message à l'IA
+
+  // Envoyer un message à l'assistant IA
   Future<void> _sendMessage() async {
     final message = _messageController.text.trim();
     if (message.isEmpty) return;
 
-    // Efface le contrôleur de texte
-    _messageController.clear();
-    
-    final DateTime now = DateTime.now();
-    final userMessage = ChatMessage(
-      text: message,
-      isUser: true,
-      timestamp: now,
-    );
+    // Vibration pour la navigation (selon préférence utilisateur)
+    FeedbackUtils().provideFeedbackForMenu();
 
-    setState(() {
-      // Ajoute le message utilisateur
-      _messages.add(userMessage);
-      _isLoading = true;
-    });
-    
-    // Sauvegarde le message utilisateur dans l'historique
-    await _historyService.addMessage({
-      'role': 'user',
+    // Effacer le champ de texte
+    _messageController.clear();
+
+    // Créer un nouveau message
+    final userMessage = {
       'content': message,
-      'timestamp': now.toIso8601String(),
+      'role': 'user',
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+
+    // Ajouter le message de l'utilisateur à l'interface
+    setState(() {
+      _messages.add(
+        ChatMessage(text: message, isUser: true, timestamp: DateTime.now()),
+      );
+      _isLoading = true;
+      _loadingMessage = "L'assistant réfléchit...";
     });
-    
-    // Faire défiler vers le bas après ajout du message
+
+    // Ajouter le message à la conversation active
+    await _conversationService.addMessageToActiveConversation(userMessage);
+
+    // Faire défiler pour voir le nouveau message
     _scrollToBottom();
 
     try {
-      final transactionProvider = Provider.of<TransactionProvider>(context, listen: false);
-      final transactionContext = await _getTransactionContextForAI(transactionProvider);
+      // Simuler l'effet de frappe avant même d'envoyer la requête API
+      setState(() {
+        _isTyping = true; // Activation de l'indicateur de frappe
+      });
 
-      // Envoie le message à l'IA avec le contexte des transactions
+      // Délai artificiel pour montrer l'indicateur de frappe (1-2 secondes)
+      await Future.delayed(const Duration(milliseconds: 1500));
+
+      // Un handler pour les messages de réessai
+      _aiService.onRetry = (attempt, total, delay) {
+        setState(() {
+          _loadingMessage =
+              "Limite de débit atteinte.\nRéessai $attempt/$total dans ${delay / 1000} secondes...";
+        });
+      };
+
+      // Obtenir le contexte des transactions si disponible
+      final transactionProvider = Provider.of<TransactionProvider>(
+        context,
+        listen: false,
+      );
+      final transactionContext = TransactionContext(
+        recentExpenses: transactionProvider.expenses.take(5).toList(),
+        recentIncomes: transactionProvider.incomes.take(5).toList(),
+        currentBalance: transactionProvider.balance,
+        monthlyExpenseTotal: transactionProvider.totalExpense,
+        monthlyIncomeTotal: transactionProvider.totalIncome,
+        expensesByCategory: transactionProvider.expensesByCategory.map(
+          (key, value) => MapEntry(key, value),
+        ),
+      );
+
+      // Envoyer le message à l'IA avec contexte
       final response = await _aiService.sendMessage(
-        message: message, 
+        message: message,
         withContext: true,
         transactionContext: transactionContext,
       );
-      
-      final DateTime responseTime = DateTime.now();
-      final assistantMessage = ChatMessage(
+
+      // Créer un message de réponse
+      final assistantMessage = {
+        'content': response,
+        'role': 'assistant',
+        'timestamp': DateTime.now().toIso8601String(),
+      };
+
+      // Désactiver l'indicateur de chargement, mais garder l'indicateur de frappe
+      setState(() {
+        _isLoading = false;
+      });
+
+      // Ajouter un message de l'assistant avec animation
+      final timestamp = DateTime.now();
+      final chatMessage = ChatMessage(
         text: response,
         isUser: false,
-        timestamp: responseTime,
+        timestamp: timestamp,
+        isAnimated: true, // Pour indiquer que ce message doit s'afficher progressivement
       );
 
-      // Ajoute la réponse de l'assistant
+      // Ajouter le message avec l'animation à l'interface et désactiver l'indicateur de frappe
       setState(() {
-        _messages.add(assistantMessage);
-        _isLoading = false;
-      });
-      
-      // Sauvegarde la réponse de l'assistant dans l'historique
-      await _historyService.addMessage({
-        'role': 'assistant',
-        'content': response,
-        'timestamp': responseTime.toIso8601String(),
+        _messages.add(chatMessage);
+        _isTyping = false; // Désactiver l'indicateur de frappe pour montrer l'animation de texte
       });
 
-      // Retour haptique + son pour cette action importante
-      await FeedbackUtils().provideFeedbackForAction();
-      
-      // Faire défiler vers le bas après avoir reçu la réponse
+      // Faire défiler pour voir le début de la réponse
       _scrollToBottom();
-      
-    } catch (e) {
-      final DateTime errorTime = DateTime.now();
-      final errorMessage = ChatMessage(
-        text: "Impossible de communiquer avec l'assistant: $e",
-        isUser: false,
-        timestamp: errorTime,
+
+      // Ajouter le message de l'assistant à la conversation active
+      await _conversationService.addMessageToActiveConversation(
+        assistantMessage,
       );
-      
-      // Gestion des erreurs
+
+      // Désactiver l'indicateur de frappe quand l'animation est terminée
+      // (cela sera géré par le widget d'animation)
+
+      // Renommer automatiquement la conversation après le premier échange
+      if (_messages.length == 3) {
+        // 1 message utilisateur + 1 message IA + 1 message de bienvenue initial
+        // Générer un titre approprié basé sur le contenu du premier message
+        String userMessageText = _messages[1].text;
+        String title = '';
+
+        // Limite la longueur du titre pour qu'il reste concis
+        if (userMessageText.length > 30) {
+          title = userMessageText.substring(0, 30) + '...';
+        } else {
+          title = userMessageText;
+        }
+
+        // Renommer la conversation avec ce nouveau titre
+        if (_activeConversationId != null) {
+          await _conversationService.renameConversation(
+            _activeConversationId!,
+            title,
+          );
+          setState(() {}); // Rafraîchir l'UI pour montrer le nouveau titre
+        }
+      }
+
+      // Faire défiler pour voir la réponse
+      _scrollToBottom();
+    } catch (e) {
+      print("Erreur lors de l'envoi du message: $e");
+
+      // Créer un message d'erreur
+      final errorMessage = {
+        'content':
+            "Désolé, je n'ai pas pu traiter votre demande. Veuillez réessayer.",
+        'role': 'assistant',
+        'timestamp': DateTime.now().toIso8601String(),
+      };
+
       setState(() {
-        _messages.add(errorMessage);
+        _messages.add(
+          ChatMessage(
+            text: errorMessage['content'] as String,
+            isUser: false,
+            timestamp: DateTime.now(),
+          ),
+        );
         _isLoading = false;
       });
-      
-      // Sauvegarde le message d'erreur dans l'historique
-      await _historyService.addMessage({
-        'role': 'system',
-        'content': "Impossible de communiquer avec l'assistant: $e",
-        'timestamp': errorTime.toIso8601String(),
-      });
-      
-      print("Erreur: $e");
-      
-      // Faire défiler vers le bas même en cas d'erreur
+
+      // Ajouter le message d'erreur à la conversation active
+      await _conversationService.addMessageToActiveConversation(errorMessage);
+
+      // Faire défiler pour voir le message d'erreur
       _scrollToBottom();
     }
   }
-  
+
+  // Naviguer vers la liste des conversations
+  void _navigateToConversationList() {
+    // Vibration uniquement pour la navigation (selon préférence utilisateur)
+    FeedbackUtils().provideFeedbackForMenu();
+    context.push(AppConstants.conversationListRoute);
+  }
+
+  // Créer une nouvelle conversation
+  Future<void> _createNewConversation() async {
+    // Vibration uniquement pour la navigation (selon préférence utilisateur)
+    FeedbackUtils().provideFeedbackForMenu();
+
+    try {
+      // Créer une nouvelle conversation
+      final newConversation = await _conversationService.createConversation();
+
+      // Rafraîchir l'interface
+      setState(() {
+        _messages.clear();
+        _activeConversationId = newConversation.id;
+        _messages.add(
+          ChatMessage(
+            text:
+                "Bonjour, je suis votre assistant financier personnel. Je peux vous aider à analyser vos finances, suggérer des stratégies d'épargne, et répondre à vos questions sur votre budget. Comment puis-je vous aider aujourd'hui ?",
+            isUser: false,
+            timestamp: DateTime.now(),
+          ),
+        );
+      });
+
+      // Message de confirmation
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nouvelle conversation créée'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      print("Erreur lors de la création d'une nouvelle conversation: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _scrollController.removeListener(_onScrollChanged);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Assistant IA'),
+        title: Text(
+          _conversationService.activeConversation?.title ?? 'Assistant IA',
+        ),
         actions: [
-          // Bouton pour effacer l'historique des conversations
+          // Bouton pour voir la liste des conversations
           IconButton(
-            icon: const Icon(Icons.delete_outline),
-            onPressed: () async {
-              // Confirmation avant de supprimer
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Effacer l\'historique'),
-                  content: const Text('Voulez-vous vraiment effacer tout l\'historique des conversations ?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(false),
-                      child: const Text('Annuler'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(true),
-                      child: const Text('Effacer'),
-                    ),
-                  ],
-                ),
-              );
-              
-              if (confirm == true) {
-                // Effacer l'historique de stockage local
-                await _historyService.clearHistory();
-                // Retour haptique (vibration uniquement) pour la navigation
-                await FeedbackUtils().provideFeedbackForMenu();
-                
-                // Réinitialiser le service IA (ajoute aussi un message de bienvenue)
-                _aiService.clearChatHistory();
-                
-                // Afficher le nouveau message de bienvenue
-                setState(() {
-                  _messages.clear();
-                  _messages.add(ChatMessage(
-                    text: "Bonjour, je suis votre assistant financier personnel. Je peux vous aider à analyser vos finances, suggérer des stratégies d'épargne, et répondre à vos questions sur votre budget. Comment puis-je vous aider aujourd'hui ?",
-                    isUser: false,
-                    timestamp: DateTime.now(),
-                  ));
-                });
-              }
-            },
+            icon: const Icon(Icons.history),
+            tooltip: 'Historique des conversations',
+            onPressed: _navigateToConversationList,
+          ),
+          // Bouton pour créer une nouvelle conversation
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: 'Nouvelle conversation',
+            onPressed: _createNewConversation,
           ),
         ],
       ),
+      // Bouton flottant pour aller à la fin de la conversation (apparaissant uniquement quand nécessaire)
+      floatingActionButton:
+          _showScrollButton
+              ? Padding(
+                padding: const EdgeInsets.only(
+                  bottom: 80.0,
+                ), // Décalage vers le haut pour éviter le champ de texte
+                child: FloatingActionButton(
+                  mini: true,
+                  // Tag hero unique pour éviter les conflits avec d'autres FloatingActionButton
+                  heroTag: "ai_chat_scroll_bottom",
+                  // Semi-transparent comme demandé
+                  backgroundColor: Theme.of(
+                    context,
+                  ).colorScheme.primaryContainer.withOpacity(0.7),
+                  foregroundColor:
+                      Theme.of(context).colorScheme.onPrimaryContainer,
+                  elevation: 2.0, // Ombre réduite pour un aspect plus léger
+                  onPressed: () {
+                    // Vibration uniquement pour la navigation (sans son)
+                    FeedbackUtils().provideFeedbackForMenu();
+                    _scrollToBottom();
+                  },
+                  tooltip: "Aller à la fin de la conversation",
+                  child: const Icon(Icons.keyboard_double_arrow_down),
+                ),
+              )
+              : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       body: Column(
         children: [
           // Liste des messages
           Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(8.0),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final message = _messages[index];
-                return MessageBubble(
-                  message: message,
-                  previousIsSameSender: index > 0 && _messages[index - 1].isUser == message.isUser,
-                );
-              },
-            ),
+            child:
+                _messages.isEmpty && !_isLoading
+                    ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.chat_bubble_outline,
+                            size: 48,
+                            color: theme.colorScheme.primary.withOpacity(0.5),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Aucun message',
+                            style: TextStyle(
+                              fontSize: 18,
+                              color: theme.colorScheme.onSurface.withOpacity(
+                                0.7,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Posez une question pour commencer',
+                            style: TextStyle(
+                              color: theme.colorScheme.onSurface.withOpacity(
+                                0.5,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                    : ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _messages.length + (_isLoading ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index < _messages.length) {
+                          return MessageBubble(message: _messages[index]);
+                        } else {
+                          // Message de chargement
+                          return Container(
+                            margin: const EdgeInsets.symmetric(vertical: 8),
+                            alignment: Alignment.centerLeft,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Indicateur de frappe (3 points animés)
+                                _isTyping
+                                    ? const TypingIndicator() // Affiche les points de frappe
+                                    : Container(
+                                      decoration: BoxDecoration(
+                                        color:
+                                            Colors
+                                                .grey[800], // Même couleur que les bulles de message de l'IA
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: const Padding(
+                                        padding: EdgeInsets.all(8.0),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                            SizedBox(width: 8),
+                                            Text(
+                                              'Chargement...',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                if (_loadingMessage.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      top: 8.0,
+                                      left: 4.0,
+                                    ),
+                                    child: Text(
+                                      _loadingMessage,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontStyle: FontStyle.italic,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withOpacity(0.6),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        }
+                      },
+                    ),
           ),
-          
-          // Indicateur de chargement
-          if (_isLoading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8.0),
-              child: Center(
-                child: CircularProgressIndicator(),
-              ),
-            ),
-          
+
           // Zone de saisie du message
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Row(
               children: [
-                // Champ de texte
+                // Champ de texte avec icône à gauche
                 Expanded(
                   child: TextField(
                     controller: _messageController,
+                    // Configuration pour permettre plusieurs lignes
+                    keyboardType: TextInputType.multiline,
+                    maxLines: 4, // Limite à 4 lignes maximum
+                    minLines: 1, // Commence avec 1 ligne
                     decoration: InputDecoration(
                       hintText: 'Poser une question...',
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(20),
                       ),
                       filled: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      // Ajout de l'icône à gauche
+                      prefixIcon: const Icon(Icons.question_answer_outlined),
                     ),
-                    textInputAction: TextInputAction.send,
+                    textInputAction:
+                        TextInputAction.newline, // Permet d'ajouter des lignes
+                    // Gérer l'envoi avec Shift+Enter
                     onSubmitted: (_) => _sendMessage(),
                   ),
                 ),
-                
+
                 // Bouton d'envoi
                 const SizedBox(width: 8),
                 FloatingActionButton(
@@ -359,63 +598,93 @@ class _AIChatScreenState extends State<AIChatScreen> {
 }
 
 // Widget pour afficher une bulle de message
-class MessageBubble extends StatelessWidget {
+class MessageBubble extends StatefulWidget {
   final ChatMessage message;
-  final bool previousIsSameSender;
 
-  const MessageBubble({
-    super.key,
-    required this.message,
-    this.previousIsSameSender = false,
-  });
+  const MessageBubble({super.key, required this.message});
+
+  @override
+  State<MessageBubble> createState() => _MessageBubbleState();
+}
+
+class _MessageBubbleState extends State<MessageBubble> {
+  bool _isAnimationComplete = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Si ce n'est pas un message animé, on considère que l'animation est déjà terminée
+    _isAnimationComplete = !widget.message.isAnimated;
+  }
+
+  // Construction de l'animation d'affichage progressif du texte
+  Widget _buildTypingAnimation() {
+    return TypingAnimation(
+      text: widget.message.text,
+      style: const TextStyle(color: Colors.white),
+      wordDelay: const Duration(
+        milliseconds: 70,
+      ), // Vitesse d'affichage des mots
+      onCompleted: () {
+        // Marquer l'animation comme terminée pour ne plus l'afficher
+        if (mounted) {
+          setState(() {
+            _isAnimationComplete = true;
+          });
+        }
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isUser = message.isUser;
-    
-    return Padding(
-      padding: EdgeInsets.only(
-        top: previousIsSameSender ? 4 : 12,
-        bottom: 4,
-        left: 8,
-        right: 8,
-      ),
+    final isUserMessage = widget.message.isUser;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      alignment: isUserMessage ? Alignment.centerRight : Alignment.centerLeft,
       child: Column(
-        crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        crossAxisAlignment:
+            isUserMessage ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          // Information de temps
-          if (!previousIsSameSender)
-            Padding(
-              padding: EdgeInsets.only(
-                bottom: 4,
-                left: isUser ? 0 : 12,
-                right: isUser ? 12 : 0,
-              ),
-              child: Text(
-                DateFormat('dd/MM HH:mm').format(message.timestamp),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          
           // Bulle de message
           Container(
             constraints: BoxConstraints(
               maxWidth: MediaQuery.of(context).size.width * 0.8,
             ),
             decoration: BoxDecoration(
-              color: isUser
-                  ? theme.colorScheme.primary.withOpacity(0.9)
-                  : theme.colorScheme.surfaceVariant,
+              color:
+                  isUserMessage
+                      ? const Color(0xFFFF8C00).withOpacity(
+                        0.8,
+                      ) // Orange translucide pour l'utilisateur
+                      : Colors.grey[800], // Noir/gris foncé pour l'IA
               borderRadius: BorderRadius.circular(16),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child:
+                widget.message.isAnimated && !_isAnimationComplete
+                    ? _buildTypingAnimation()
+                    : Text(
+                      widget.message.text,
+                      style: const TextStyle(
+                        color:
+                            Colors
+                                .white, // Texte blanc pour une meilleure lisibilité sur les deux fonds
+                      ),
+                    ),
+          ),
+
+          // Horodatage
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 8, right: 8),
             child: Text(
-              message.text,
+              DateFormat('HH:mm').format(widget.message.timestamp),
               style: TextStyle(
-                color: isUser ? theme.colorScheme.onPrimary : theme.colorScheme.onSurfaceVariant,
+                fontSize: 10,
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurfaceVariant.withOpacity(0.6),
               ),
             ),
           ),
@@ -430,10 +699,13 @@ class ChatMessage {
   final String text;
   final bool isUser;
   final DateTime timestamp;
+  final bool
+  isAnimated; // Indique si le message doit s'afficher progressivement
 
   ChatMessage({
     required this.text,
     required this.isUser,
     required this.timestamp,
+    this.isAnimated = false,
   });
 }

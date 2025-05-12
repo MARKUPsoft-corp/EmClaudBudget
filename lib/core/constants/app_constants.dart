@@ -10,6 +10,7 @@ class AppConstants {
   static const String addExpenseRoute = '/add-expense';
   static const String settingsRoute = '/settings';
   static const String aiChatRoute = '/ai-chat';
+  static const String conversationListRoute = '/conversations';
 
   // Catégories de dépenses
   static final List<ExpenseCategory> expenseCategories = [

@@ -11,14 +11,17 @@ class AIService {
   // Historique des messages pour maintenir le contexte
   final List<Map<String, String>> _chatHistory = [];
   List<Map<String, String>> get chatHistory => List.unmodifiable(_chatHistory);
-  
+
+  // Callback pour notifier des réessais (tentative, total, délai)
+  Function(int, int, int)? onRetry;
+
   // Définit l'historique complet des messages (utilisé pour charger depuis le stockage local)
   set chatHistory(List<Map<String, dynamic>> history) {
     _chatHistory.clear();
     for (var msg in history) {
       _chatHistory.add({
         'role': msg['role'] as String,
-        'content': msg['content'] as String
+        'content': msg['content'] as String,
       });
     }
   }
@@ -47,27 +50,68 @@ class AIService {
         _chatHistory.add({'role': 'user', 'content': message});
       }
 
-      // Préparer les messages pour l'API en incluant l'historique complet
+      // Préparer les messages pour l'API en limitant l'historique pour éviter les limites de débit
       final messages = [
         {'role': 'system', 'content': _getSystemPrompt()},
-        ..._chatHistory, // Envoyer l'historique complet pour maintenir le contexte
+        // Ne prendre que les 5 derniers messages pour éviter de dépasser la limite de tokens par minute
+        ..._chatHistory.takeLast(5),
       ];
 
-      // Appel à l'API Groq
-      final response = await _client.post(
-        Uri.parse('https://api.groq.com/openai/v1/chat/completions'),
-        headers: {
-          'Authorization': 'Bearer $_apiKey',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          // Utilisation d'un modèle de production officiellement listé par Groq
-          'model': 'llama-3.1-8b-instant',
-          'messages': messages,
-          'temperature': 0.4,
-          'max_tokens': 1000,
-        }),
-      );
+      // Appel à l'API Groq avec stratégie de réessai en cas d'erreur de limite de débit
+      http.Response response;
+      int maxRetries = 3;
+      int currentRetry = 0;
+      int retryDelayMs = 2000; // Délai initial de 2 secondes
+
+      while (true) {
+        try {
+          response = await _client.post(
+            Uri.parse('https://api.groq.com/openai/v1/chat/completions'),
+            headers: {
+              'Authorization': 'Bearer $_apiKey',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              // Utilisation d'un modèle de production officiellement listé par Groq
+              'model': 'llama-3.1-8b-instant',
+              'messages': messages,
+              'temperature': 0.4,
+              // Réduire les max_tokens pour éviter de dépasser la limite par minute
+              'max_tokens': 500,
+            }),
+          );
+
+          // Vérifier si on a une erreur de limite de débit (429)
+          if (response.statusCode == 429 && currentRetry < maxRetries) {
+            currentRetry++;
+            print(
+              'Limite de débit atteinte. Réessai ${currentRetry}/${maxRetries} dans ${retryDelayMs / 1000} secondes...',
+            );
+            // Notifier l'interface utilisateur du réessai
+            onRetry?.call(currentRetry, maxRetries, retryDelayMs);
+            await Future.delayed(Duration(milliseconds: retryDelayMs));
+            // Augmenter progressivement le délai de réessai (backoff exponentiel)
+            retryDelayMs *= 2;
+            continue;
+          }
+
+          // Si pas d'erreur 429 ou si on a dépassé le nombre de réessais, sortir de la boucle
+          break;
+        } catch (e) {
+          if (currentRetry < maxRetries) {
+            currentRetry++;
+            print(
+              'Erreur de connexion. Réessai ${currentRetry}/${maxRetries} dans ${retryDelayMs / 1000} secondes...',
+            );
+            // Notifier l'interface utilisateur du réessai
+            onRetry?.call(currentRetry, maxRetries, retryDelayMs);
+            await Future.delayed(Duration(milliseconds: retryDelayMs));
+            retryDelayMs *= 2;
+            continue;
+          }
+          rethrow;
+        }
+      }
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -95,62 +139,58 @@ class AIService {
   }
 
   /// Construit un prompt contextuel avec les données financières
-  String _buildContextualPrompt(
-    String userMessage,
-    TransactionContext context,
-  ) {
-    // Formater les dernières dépenses
-    final expensesList = context.recentExpenses
-        .map(
-          (e) =>
-              "- ${e.description}: ${e.amount} FCFA (${_formatDate(e.date)}), catégorie: ${e.categoryId}",
-        )
-        .join("\n");
+  String _buildContextualPrompt(String userQuery, TransactionContext context) {
+    // Version simplifiée du contexte pour réduire le nombre de tokens
+    final totalMonthlyIncome = context.monthlyIncomeTotal.toStringAsFixed(2);
+    final totalMonthlyExpenses = context.monthlyExpenseTotal.toStringAsFixed(2);
+    final balance = context.currentBalance.toStringAsFixed(2);
 
-    // Formater les derniers revenus
-    final incomesList = context.recentIncomes
-        .map(
-          (i) =>
-              "- ${i.description}: ${i.amount} FCFA (${_formatDate(i.date)}), type: ${i.isActive ? 'actif' : 'passif'}",
-        )
-        .join("\n");
+    // Réduire le nombre de revenus et dépenses inclus dans le contexte
+    String recentIncomesText = '';
+    for (final income in context.recentIncomes.take(3)) {
+      recentIncomesText +=
+          '- ${_formatDate(income.date)} : ${income.amount.toStringAsFixed(2)} FCFA - ${income.description}\n';
+    }
 
-    // Construire le prompt avec le contexte
-    return """
-Contexte financier actuel:
-Solde actuel: ${context.currentBalance} FCFA
-Total dépenses (30 derniers jours): ${context.monthlyExpenseTotal} FCFA
-Total revenus (30 derniers jours): ${context.monthlyIncomeTotal} FCFA
+    String recentExpensesText = '';
+    for (final expense in context.recentExpenses.take(3)) {
+      recentExpensesText +=
+          '- ${_formatDate(expense.date)} : ${expense.amount.toStringAsFixed(2)} FCFA - ${expense.categoryId}\n';
+    }
 
-5 dernières dépenses:
-$expensesList
+    // Simplifier les dépenses par catégorie pour inclure seulement les principales
+    var topCategories =
+        context.expensesByCategory.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
 
-5 derniers revenus:
-$incomesList
+    String expensesByCategoryText = '';
+    for (var entry in topCategories.take(3)) {
+      expensesByCategoryText += '- ${entry.key}: ${entry.value.toStringAsFixed(2)} FCFA\n';
+    }
 
-Principales catégories de dépenses:
-${context.expensesByCategory.entries.map((e) => "- ${e.key}: ${e.value} FCFA").join("\n")}
-
-Question/demande: $userMessage
-""";
+    return '''
+    Question: "$userQuery"
+    Contexte: Solde=$balance FCFA, Revenus=$totalMonthlyIncome FCFA, Dépenses=$totalMonthlyExpenses FCFA
+    Dépenses récentes: $recentExpensesText
+    Revenus récents: $recentIncomesText
+    Top catégories: $expensesByCategoryText
+    ''';
   }
 
   /// Obtient le prompt système qui définit le comportement de l'IA
   String _getSystemPrompt() {
-    return """
-Tu es MARKUPai, l'assistant financier intégré à l'application EmClaud Budget. Tu aides les utilisateurs à mieux comprendre et gérer leurs finances personnelles.
+    return '''
+Vous êtes un assistant financier personnel pour une application de suivi de budget utilisant le franc CFA (FCFA) comme devise.
+Votre rôle est d'aider l'utilisateur à comprendre ses finances, analyser ses habitudes de dépenses,
+proposer des stratégies d'épargne, et répondre aux questions liées au budget et aux finances personnelles.
 
-Règles à respecter:
-1. Sois concis et direct dans tes réponses
-2. Réponds toujours en français
-3. Focalise-toi sur les aspects financiers et budgétaires
-4. Donne des conseils pratiques et personnalisés basés sur les données partagées
-5. Respecte la vie privée de l'utilisateur
-6. N'invente pas de données si elles ne sont pas fournies
-7. Pour les montants, utilise toujours le format "XXX FCFA"
-
-Quand l'utilisateur te pose une question sur ses finances, utilise le contexte donné (solde, revenus, dépenses) pour formuler une réponse pertinente.
-""";
+INSTRUCTIONS IMPORTANTES :
+1. Fournissez des réponses CONCISES et DIRECTES qui répondent EXACTEMENT à la question posée.
+2. LIMITEZ vos réponses à 1-3 phrases courtes, sauf si plus de détails sont explicitement demandés.
+3. Évitez les longues introductions et les formules de politesse inutiles.
+4. Utilisez TOUJOURS le franc CFA (FCFA) comme devise dans vos réponses.
+5. Soyez précis et factuel, sans être verbeux.
+''';
   }
 
   /// Formater une date en format français
@@ -164,7 +204,8 @@ Quand l'utilisateur te pose une question sur ses finances, utilise le contexte d
     // Ajouter un message de bienvenue pour démarrer la conversation
     _chatHistory.add({
       'role': 'assistant',
-      'content': "Bonjour, je suis votre assistant financier personnel. Je peux vous aider à analyser vos finances, suggérer des stratégies d'épargne, et répondre à vos questions sur votre budget. Comment puis-je vous aider aujourd'hui ?"
+      'content':
+          "Bonjour, je suis votre assistant financier personnel. Je peux vous aider à analyser vos finances, suggérer des stratégies d'épargne, et répondre à vos questions sur votre budget. Comment puis-je vous aider aujourd'hui ?",
     });
   }
 }

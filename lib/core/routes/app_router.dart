@@ -9,6 +9,7 @@ import 'package:budget_express/presentation/screens/add_expense_screen.dart';
 import 'package:budget_express/presentation/screens/settings_screen.dart';
 import 'package:budget_express/presentation/screens/home_screen.dart';
 import 'package:budget_express/presentation/screens/ai_chat_screen.dart';
+import 'package:budget_express/presentation/screens/conversation_list_screen.dart';
 
 class AppRouter {
   static final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -86,6 +87,40 @@ class AppRouter {
             pageBuilder: (context, state) => CustomTransitionPage(
               key: state.pageKey,
               child: const AIChatScreen(),
+              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: child,
+                );
+              },
+            ),
+            routes: [
+              // Route pour une conversation spécifique (accessible avec /ai-chat/:id)
+              GoRoute(
+                path: ':id',
+                pageBuilder: (context, state) {
+                  final conversationId = state.pathParameters['id'];
+                  return CustomTransitionPage(
+                    key: state.pageKey,
+                    child: AIChatScreen(conversationId: conversationId),
+                    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                      return FadeTransition(
+                        opacity: animation,
+                        child: child,
+                      );
+                    },
+                  );
+                },
+              ),
+            ],
+          ),
+          
+          // Route de la liste des conversations
+          GoRoute(
+            path: AppConstants.conversationListRoute,
+            pageBuilder: (context, state) => CustomTransitionPage(
+              key: state.pageKey,
+              child: const ConversationListScreen(),
               transitionsBuilder: (context, animation, secondaryAnimation, child) {
                 return FadeTransition(
                   opacity: animation,
