@@ -85,19 +85,6 @@ class _HomeScreenState extends State<HomeScreen> {
       body: isDesktop
           ? _buildDesktopLayout(context, routes)
           : _buildMobileLayout(context, routes),
-      // FAB pour ajouter une nouvelle transaction
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          // Uniquement retour haptique pour la navigation
-          await FeedbackUtils().provideFeedbackForMenu();
-          _showAddTransactionOptions(context);
-        },
-        child: const Icon(Icons.add),
-      ),
-      // Positionnement optimisé sur mobile pour éviter les conflits avec la navigation
-      floatingActionButtonLocation: isDesktop
-          ? FloatingActionButtonLocation.endFloat
-          : FloatingActionButtonLocation.centerFloat,
     );
   }
 
@@ -303,72 +290,6 @@ class _HomeScreenState extends State<HomeScreen> {
               .toList(),
         ),
       ],
-    );
-  }
-
-  // Boîte de dialogue pour ajouter une nouvelle transaction
-  void _showAddTransactionOptions(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Ajouter une transaction',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 16),
-                ListTile(
-                  leading: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.arrow_upward,
-                      color: Colors.green,
-                    ),
-                  ),
-                  title: const Text('Ajouter un revenu'),
-                  onTap: () async {
-                    // Activer les retours haptiques et sonores
-                    await FeedbackUtils().provideFeedbackForMenu();
-                    Navigator.pop(context);
-                    context.push(AppConstants.addIncomeRoute);
-                  },
-                ),
-                ListTile(
-                  leading: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.arrow_downward,
-                      color: Colors.red,
-                    ),
-                  ),
-                  title: const Text('Ajouter une dépense'),
-                  onTap: () async {
-                    // Activer les retours haptiques et sonores
-                    await FeedbackUtils().provideFeedbackForMenu();
-                    Navigator.pop(context);
-                    context.push(AppConstants.addExpenseRoute);
-                  },
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }
